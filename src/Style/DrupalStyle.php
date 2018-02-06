@@ -16,6 +16,7 @@ use Drupal\Console\Core\Helper\DrupalChoiceQuestionHelper;
 
 /**
  * Class DrupalStyle
+ *
  * @package Drupal\Console\Core\Style
  */
 class DrupalStyle extends SymfonyStyle
@@ -39,16 +40,16 @@ class DrupalStyle extends SymfonyStyle
      * @param string $question
      * @param array  $choices
      * @param mixed  $default
-     * @param bool   $allowEmpty
+     * @param bool   $skipValidation
      *
      * @return string
      */
-    public function choiceNoList($question, array $choices, $default = null, $allowEmpty = false)
-    {
-        if ($allowEmpty) {
-            $default = ' ';
-        }
-
+    public function choiceNoList(
+        $question,
+        array $choices,
+        $default = null,
+        $skipValidation = false
+    ) {
         if (is_null($default)) {
             $default = current($choices);
         }
@@ -62,7 +63,16 @@ class DrupalStyle extends SymfonyStyle
             $default = $values[$default];
         }
 
-        return trim($this->askChoiceQuestion(new ChoiceQuestion($question, $choices, $default)));
+        $choiceQuestion = new ChoiceQuestion($question, $choices, $default);
+        if ($skipValidation) {
+            $choiceQuestion->setValidator(
+                function ($answer) {
+                    return $answer;
+                }
+            );
+        }
+
+        return trim($this->askChoiceQuestion($choiceQuestion));
     }
 
     /**
@@ -95,7 +105,6 @@ class DrupalStyle extends SymfonyStyle
     {
         $questionHelper = new DrupalChoiceQuestionHelper();
         $answer = $questionHelper->ask($this->input, $this, $question);
-
         return $answer;
     }
 
@@ -106,21 +115,32 @@ class DrupalStyle extends SymfonyStyle
      */
     public function askHiddenEmpty($question)
     {
-        $question = new Question($question, ' ');
+        $question = new Question($question, '');
         $question->setHidden(true);
+        $question->setValidator(
+            function ($answer) {
+                return $answer;
+            }
+        );
 
         return trim($this->askQuestion($question));
     }
 
     /**
-     * @param string        $question
+     * @param string $question
+     * @param string $default
      * @param null|callable $validator
      *
      * @return string
      */
-    public function askEmpty($question, $validator = null)
+    public function askEmpty($question, $default = '', $validator = null)
     {
-        $question = new Question($question, ' ');
+        $question = new Question($question, $default);
+        if (!$validator) {
+            $validator = function ($answer) {
+                return $answer;
+            };
+        }
         $question->setValidator($validator);
 
         return trim($this->askQuestion($question));
@@ -213,6 +233,14 @@ class DrupalStyle extends SymfonyStyle
     }
 
     /**
+     * {@inheritdoc}
+     */
+    public function warning($message)
+    {
+        $this->block($message, 'WARNING', 'fg=white;bg=yellow', ' ', true);
+    }
+
+    /**
      * @param array|string $message
      */
     public function text($message)
@@ -221,31 +249,35 @@ class DrupalStyle extends SymfonyStyle
         parent::text($message);
     }
 
-    public function successLite($message, $newLine = false) {
+    public function successLite($message, $newLine = false)
+    {
         $message = sprintf('<info>✔</info> %s', $message);
         parent::text($message);
-        if ($newLine){
+        if ($newLine) {
             parent::newLine();
         }
     }
 
-    public function errorLite($message, $newLine = false) {
+    public function errorLite($message, $newLine = false)
+    {
         $message = sprintf('<fg=red>✘</> %s', $message);
         parent::text($message);
-        if ($newLine){
+        if ($newLine) {
             parent::newLine();
         }
     }
 
-    public function warningLite($message, $newLine = false) {
+    public function warningLite($message, $newLine = false)
+    {
         $message = sprintf('<comment>!</comment> %s', $message);
         parent::text($message);
-        if ($newLine){
+        if ($newLine) {
             parent::newLine();
         }
     }
 
-    public function customLite($message, $prefix = '*', $style = '', $newLine = false) {
+    public function customLite($message, $prefix = '*', $style = '', $newLine = false)
+    {
         if ($style) {
             $message = sprintf(
                 '<%s>%s</%s> %s',
@@ -262,8 +294,16 @@ class DrupalStyle extends SymfonyStyle
             );
         }
         parent::text($message);
-        if ($newLine){
+        if ($newLine) {
             parent::newLine();
         }
+    }
+
+    /**
+     * @return InputInterface
+     */
+    public function getInput()
+    {
+        return $this->input;
     }
 }

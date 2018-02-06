@@ -9,21 +9,17 @@ namespace Drupal\Console\Core\Command;
 
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Command\Command as BaseCommand;
-use Drupal\Console\Core\Command\Shared\CommandTrait;
 use Drupal\Console\Core\Utils\ConfigurationManager;
 use Drupal\Console\Core\Utils\RequirementChecker;
 use Drupal\Console\Core\Utils\ChainQueue;
-use Drupal\Console\Core\Style\DrupalStyle;
 
 /**
  * Class CheckCommand
+ *
  * @package Drupal\Console\Core\Command
  */
-class CheckCommand extends BaseCommand
+class CheckCommand extends Command
 {
-    use CommandTrait;
-
     /**
      * @var RequirementChecker
      */
@@ -41,6 +37,7 @@ class CheckCommand extends BaseCommand
 
     /**
      * CheckCommand constructor.
+     *
      * @param RequirementChecker   $requirementChecker
      * @param ChainQueue           $chainQueue
      * @param ConfigurationManager $configurationManager
@@ -72,36 +69,18 @@ class CheckCommand extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $io = new DrupalStyle($input, $output);
-
         $checks = $this->requirementChecker->getCheckResult();
         if (!$checks) {
-            $phpCheckFile = $this->configurationManager->getHomeDirectory().'/.console/phpcheck.yml';
-            $phpCheckFileDisplay = realpath($this->configurationManager->getHomeDirectory()).'/.console/phpcheck.yml';
-
-            if (!file_exists($phpCheckFile)) {
-                $phpCheckFile =
-                    $this->configurationManager->getApplicationDirectory().
-                    DRUPAL_CONSOLE_CORE.
-                    'config/dist/phpcheck.yml';
-
-                $phpCheckFileDisplay =
-                    realpath($this->configurationManager->getApplicationDirectory()).
-                    DRUPAL_CONSOLE_CORE.
-                    'config/dist/phpcheck.yml';
-            }
-
-            $io->newLine();
-            $io->info($this->trans('commands.check.messages.file'));
-            $io->comment($phpCheckFileDisplay);
+            $phpCheckFile = $this->configurationManager
+                ->getVendorCoreDirectory() . 'phpcheck.yml';
 
             $checks = $this->requirementChecker->validate($phpCheckFile);
         }
 
         if (!$checks['php']['valid']) {
-            $io->error(
+            $this->getIo()->error(
                 sprintf(
-                    $this->trans('commands.check.messages.php_invalid'),
+                    $this->trans('commands.check.messages.php-invalid'),
                     $checks['php']['current'],
                     $checks['php']['required']
                 )
@@ -112,9 +91,9 @@ class CheckCommand extends BaseCommand
 
         if ($extensions = $checks['extensions']['required']['missing']) {
             foreach ($extensions as $extension) {
-                $io->error(
+                $this->getIo()->error(
                     sprintf(
-                        $this->trans('commands.check.messages.extension_missing'),
+                        $this->trans('commands.check.messages.extension-missing'),
                         $extension
                     )
                 );
@@ -123,10 +102,10 @@ class CheckCommand extends BaseCommand
 
         if ($extensions = $checks['extensions']['recommended']['missing']) {
             foreach ($extensions as $extension) {
-                $io->commentBlock(
+                $this->getIo()->commentBlock(
                     sprintf(
                         $this->trans(
-                            'commands.check.messages.extension_recommended'
+                            'commands.check.messages.extension-recommended'
                         ),
                         $extension
                     )
@@ -136,9 +115,9 @@ class CheckCommand extends BaseCommand
 
         if ($configurations = $checks['configurations']['required']['missing']) {
             foreach ($configurations as $configuration) {
-                $io->error(
+                $this->getIo()->error(
                     sprintf(
-                        $this->trans('commands.check.messages.configuration_missing'),
+                        $this->trans('commands.check.messages.configuration-missing'),
                         $configuration
                     )
                 );
@@ -147,10 +126,10 @@ class CheckCommand extends BaseCommand
 
         if ($configurations = $checks['configurations']['required']['overwritten']) {
             foreach ($configurations as $configuration => $overwritten) {
-                $io->commentBlock(
+                $this->getIo()->commentBlock(
                     sprintf(
                         $this->trans(
-                            'commands.check.messages.configuration_overwritten'
+                            'commands.check.messages.configuration-overwritten'
                         ),
                         $configuration,
                         $overwritten
@@ -160,7 +139,7 @@ class CheckCommand extends BaseCommand
         }
 
         if ($this->requirementChecker->isValid() && !$this->requirementChecker->isOverwritten()) {
-            $io->success(
+            $this->getIo()->success(
                 $this->trans('commands.check.messages.success')
             );
         }

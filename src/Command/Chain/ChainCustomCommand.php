@@ -9,20 +9,17 @@ namespace Drupal\Console\Core\Command\Chain;
 
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Input\InputOption;
-use Symfony\Component\Console\Command\Command;
-use Drupal\Console\Core\Command\Shared\CommandTrait;
+use Symfony\Component\Console\Output\OutputInterface;
 use Drupal\Console\Core\Command\Shared\InputTrait;
 
 /**
  * Class ChainCustomCommand
  *
- * @package Drupal\Console\Core\Command\ChainRegister
+ * @package Drupal\Console\Core\Command\ChainCustomCommand
  */
-class ChainCustomCommand extends Command
+class ChainCustomCommand extends BaseCommand
 {
-    use CommandTrait;
     use InputTrait;
 
     /**
@@ -41,19 +38,33 @@ class ChainCustomCommand extends Command
     protected $file;
 
     /**
-     * ChainRegister constructor.
+     * ChainCustomCommand constructor.
      *
      * @param $name
      * @param $description
      * @param $file
+     * @param $chainDiscovery
      */
-    public function __construct($name, $description, $file)
-    {
+    public function __construct(
+        $name,
+        $description,
+        $file,
+        $chainDiscovery
+    ) {
         $this->name = $name;
         $this->description = $description;
         $this->file = $file;
 
-        parent::__construct();
+        parent::__construct($chainDiscovery);
+        $this->ignoreValidationErrors();
+
+        $this->addOption(
+            'file',
+            null,
+            InputOption::VALUE_OPTIONAL,
+            null,
+            $file
+        );
     }
 
     /**
@@ -63,13 +74,7 @@ class ChainCustomCommand extends Command
     {
         $this
             ->setName($this->name)
-            ->setDescription($this->description)
-            ->addOption(
-                'placeholder',
-                null,
-                InputOption::VALUE_IS_ARRAY | InputOption::VALUE_OPTIONAL,
-                $this->trans('commands.chain.options.placeholder')
-            );
+            ->setDescription($this->description);
     }
 
     /**
@@ -84,23 +89,14 @@ class ChainCustomCommand extends Command
             '--file'  => $this->file,
         ];
 
-        if ($placeholder = $input->getOption('placeholder')) {
-            $arguments['--placeholder'] = $this->inlineValueAsArray($placeholder);
-        }
-
         foreach ($input->getOptions() as $option => $value) {
-            if ($option != 'placeholder' && $value) {
-                if (is_bool($value)) {
-                    $value = true;
-                }
-                $arguments['--'.$option] = $value;
+            if ($value) {
+                $arguments['--' . $option] = $value;
             }
         }
 
         $commandInput = new ArrayInput($arguments);
-        if (array_key_exists('--no-interaction', $arguments)) {
-            $commandInput->setInteractive(false);
-        }
+        $commandInput->setInteractive(true);
 
         return $command->run($commandInput, $output);
     }

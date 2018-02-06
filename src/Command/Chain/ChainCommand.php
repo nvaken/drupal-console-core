@@ -13,34 +13,25 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputOption;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Yaml\Parser;
 use Drupal\Console\Core\Utils\ChainQueue;
 use Drupal\Console\Core\Utils\ChainDiscovery;
 use Drupal\Console\Core\Command\Shared\InputTrait;
-use Drupal\Console\Core\Style\DrupalStyle;
-use Drupal\Console\Core\Command\Shared\CommandTrait;
 
 /**
  * Class ChainCommand
  *
  * @package Drupal\Console\Core\Command\Chain
  */
-class ChainCommand extends Command
+class ChainCommand extends BaseCommand
 {
-    use CommandTrait;
     use InputTrait;
 
     /**
      * @var ChainQueue
      */
     protected $chainQueue;
-
-    /**
-     * @var ChainDiscovery
-     */
-    protected $chainDiscovery;
 
     /**
      * ChainCommand constructor.
@@ -53,9 +44,9 @@ class ChainCommand extends Command
         ChainDiscovery $chainDiscovery
     ) {
         $this->chainQueue = $chainQueue;
-        $this->chainDiscovery = $chainDiscovery;
 
-        parent::__construct();
+        parent::__construct($chainDiscovery);
+        $this->ignoreValidationErrors();
     }
 
     /**
@@ -71,12 +62,6 @@ class ChainCommand extends Command
                 null,
                 InputOption::VALUE_OPTIONAL,
                 $this->trans('commands.chain.options.file')
-            )
-            ->addOption(
-                'placeholder',
-                null,
-                InputOption::VALUE_IS_ARRAY | InputOption::VALUE_OPTIONAL,
-                $this->trans('commands.chain.options.placeholder')
             );
     }
 
@@ -85,50 +70,50 @@ class ChainCommand extends Command
      */
     protected function interact(InputInterface $input, OutputInterface $output)
     {
-        $io = new DrupalStyle($input, $output);
-        $file = $input->getOption('file');
+        $file = $this->getFileOption();
 
-        if (!$file) {
-            $files = $this->chainDiscovery->getChainFiles(true);
-
-            $file = $io->choice(
-                $this->trans('commands.chain.questions.chain-file'),
-                array_values($files)
+        $chainContent = $this->chainDiscovery
+            ->parseContent(
+                $file,
+                $this->getOptionsAsArray()
             );
-        }
 
-        $file = calculateRealPath($file);
-        $input->setOption('file', $file);
+        $inlinePlaceHolders = $this->chainDiscovery
+            ->extractInlinePlaceHolders($chainContent);
 
-        $chainContent = $this->getFileContents($file);
-
-        $placeholder = $input->getOption('placeholder');
-
-        $inlinePlaceHolders = $this->extractInlinePlaceHolders($chainContent);
-
-        if (!$placeholder && $inlinePlaceHolders) {
-            foreach ($inlinePlaceHolders as $key => $inlinePlaceHolder) {
-                $inlinePlaceHolderDefault = '';
-                if (strpos($inlinePlaceHolder, '|')>0) {
-                    $placeholderParts = explode('|', $inlinePlaceHolder);
-                    $inlinePlaceHolder = $placeholderParts[0];
-                    $inlinePlaceHolderDefault = $placeholderParts[1];
-                    $inlinePlaceHolders[$key] = $inlinePlaceHolder;
-                }
-
-                $placeholder[] = sprintf(
-                    '%s:%s',
-                    $inlinePlaceHolder,
-                    $io->ask(
-                        sprintf(
-                            'Enter value for %s placeholder',
-                            $inlinePlaceHolder
+        foreach ($inlinePlaceHolders as $inlinePlaceHolder => $inlinePlaceHolderValue) {
+            if (is_array($inlinePlaceHolderValue)) {
+                $placeHolderValue = $this->getIo()->choice(
+                    sprintf(
+                        $this->trans('commands.chain.messages.select-value-for-placeholder'),
+                        $inlinePlaceHolder
+                    ),
+                    $inlinePlaceHolderValue,
+                    current($inlinePlaceHolderValue)
+                );
+            } else {
+                $placeHolderValue = $this->getIo()->ask(
+                    sprintf(
+                        $this->trans(
+                            'commands.chain.messages.enter-value-for-placeholder'
                         ),
-                        $inlinePlaceHolderDefault
-                    )
+                        $inlinePlaceHolder
+                    ),
+                    $inlinePlaceHolderValue
                 );
             }
-            $input->setOption('placeholder', $placeholder);
+
+            if (!$input->hasOption($inlinePlaceHolder)) {
+                $this->addOption(
+                    $inlinePlaceHolder,
+                    null,
+                    InputOption::VALUE_OPTIONAL,
+                    null,
+                    null
+                );
+            }
+
+            $input->setOption($inlinePlaceHolder, $placeHolderValue);
         }
     }
 
@@ -137,14 +122,11 @@ class ChainCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $io = new DrupalStyle($input, $output);
-
         $interactive = false;
-        $learning = $input->hasOption('learning')?$input->getOption('learning'):false;
 
         $file = $input->getOption('file');
         if (!$file) {
-            $io->error($this->trans('commands.chain.messages.missing_file'));
+            $this->getIo()->error($this->trans('commands.chain.messages.missing-file'));
 
             return 1;
         }
@@ -153,9 +135,9 @@ class ChainCommand extends Command
         $file = calculateRealPath($file);
 
         if (!$fileSystem->exists($file)) {
-            $io->error(
+            $this->getIo()->error(
                 sprintf(
-                    $this->trans('commands.chain.messages.invalid_file'),
+                    $this->trans('commands.chain.messages.invalid-file'),
                     $file
                 )
             );
@@ -163,139 +145,88 @@ class ChainCommand extends Command
             return 1;
         }
 
-        $placeholder = $input->getOption('placeholder');
-        if ($placeholder) {
-            $placeholder = $this->inlineValueAsArray($placeholder);
-        }
-        $placeHolderOptions = [];
-        foreach ($placeholder as $placeholderItem) {
-            $placeHolderOptions[] = key($placeholderItem);
-        }
+        $chainContent = $this->chainDiscovery
+            ->parseContent(
+                $file,
+                $this->getOptionsAsArray()
+            );
 
-        $chainContent = $this->getFileContents($file);
-        $inlinePlaceHolders = $this->extractInlinePlaceHolders($chainContent);
+        // Resolve inlinePlaceHolders
+        $inlinePlaceHolders = $this->chainDiscovery
+            ->extractInlinePlaceHolders($chainContent);
 
         if ($inlinePlaceHolders) {
-            foreach ($inlinePlaceHolders as $key => $inlinePlaceHolder) {
-                if (!strpos($inlinePlaceHolder, '|')) {
-                    continue;
-                }
+            $this->getIo()->error(
+                sprintf(
+                    $this->trans('commands.chain.messages.missing-inline-placeholders'),
+                    implode(', ', array_keys($inlinePlaceHolders))
+                )
+            );
 
-                $placeholderParts = explode('|', $inlinePlaceHolder);
-                $inlinePlaceHolder = $placeholderParts[0];
-                $inlinePlaceHolderDefault = $placeholderParts[1];
+            $this->getIo()->info(
+                $this->trans(
+                    'commands.chain.messages.set-inline-placeholders'
+                )
+            );
 
-                if (!$inlinePlaceHolderDefault) {
-                    continue;
-                }
+            foreach ($inlinePlaceHolders as $inlinePlaceHolder => $inlinePlaceHolderValue) {
+                $missingInlinePlaceHoldersMessage = sprintf(
+                    '--%s="%s_VALUE"',
+                    $inlinePlaceHolder,
+                    strtoupper($inlinePlaceHolder)
+                );
 
-                if (in_array($inlinePlaceHolder, $placeHolderOptions)) {
-                    continue;
-                }
-
-                $placeholder[] = [$inlinePlaceHolder => $inlinePlaceHolderDefault];
+                $this->getIo()->block($missingInlinePlaceHoldersMessage);
             }
+
+            return 1;
         }
 
-        $environmentPlaceHolders = $this->extractEnvironmentPlaceHolders($chainContent);
-        $envPlaceHolderMap = [];
-        $missingEnvironmentPlaceHolders = [];
-        foreach ($environmentPlaceHolders as $envPlaceHolder) {
-            if (!getenv($envPlaceHolder)) {
-                $missingEnvironmentPlaceHolders[$envPlaceHolder] = sprintf(
+        // Resolve environmentPlaceHolders
+        $environmentPlaceHolders = $this->chainDiscovery
+            ->extractEnvironmentPlaceHolders($chainContent);
+        if ($environmentPlaceHolders) {
+            $this->getIo()->error(
+                sprintf(
+                    $this->trans(
+                        'commands.chain.messages.missing-environment-placeholders'
+                    ),
+                    implode(
+                        ', ',
+                        array_values($environmentPlaceHolders)
+                    )
+                )
+            );
+
+            $this->getIo()->info(
+                $this->trans(
+                    'commands.chain.messages.set-environment-placeholders'
+                )
+            );
+
+            foreach ($environmentPlaceHolders as $envPlaceHolder) {
+                $missingEnvironmentPlaceHoldersMessage = sprintf(
                     'export %s=%s_VALUE',
                     $envPlaceHolder,
                     strtoupper($envPlaceHolder)
                 );
 
-                continue;
+                $this->getIo()->block($missingEnvironmentPlaceHoldersMessage);
             }
-            $envPlaceHolderMap[$envPlaceHolder] = getenv($envPlaceHolder);
-        }
-
-        if ($missingEnvironmentPlaceHolders) {
-            $io->error(
-                sprintf(
-                    $this->trans('commands.chain.messages.missing-environment-placeholders'),
-                    implode(', ', array_keys($missingEnvironmentPlaceHolders))
-                )
-            );
-
-            $io->info($this->trans('commands.chain.messages.set-environment-placeholders'));
-            $io->block(array_values($missingEnvironmentPlaceHolders));
 
             return 1;
         }
-
-        $envPlaceHolderData = new ArrayDataSource($envPlaceHolderMap);
-        $placeholderResolver = new RegexPlaceholderResolver($envPlaceHolderData, '${{', '}}');
-        $chainContent = $placeholderResolver->resolvePlaceholder($chainContent);
-
-        $inlinePlaceHolders = $this->extractInlinePlaceHolders($chainContent);
-
-        $inlinePlaceHoldersReplacements = [];
-        foreach ($inlinePlaceHolders as $key => $inlinePlaceHolder) {
-            if (strpos($inlinePlaceHolder, '|') > 0) {
-                $placeholderParts = explode('|', $inlinePlaceHolder);
-                $inlinePlaceHoldersReplacements[] = $placeholderParts[0];
-                continue;
-            }
-            $inlinePlaceHoldersReplacements[] = $inlinePlaceHolder;
-        }
-
-        $chainContent = str_replace(
-            $inlinePlaceHolders,
-            $inlinePlaceHoldersReplacements,
-            $chainContent
-        );
-
-        $inlinePlaceHolders = $inlinePlaceHoldersReplacements;
-
-        $inlinePlaceHolderMap = [];
-        foreach ($placeholder as $key => $placeholderItem) {
-            $inlinePlaceHolderMap = array_merge($inlinePlaceHolderMap, $placeholderItem);
-        }
-
-        $missingInlinePlaceHolders = [];
-
-        foreach ($inlinePlaceHolders as $inlinePlaceHolder) {
-            if (!array_key_exists($inlinePlaceHolder, $inlinePlaceHolderMap)) {
-                $missingInlinePlaceHolders[$inlinePlaceHolder] = sprintf(
-                    '--placeholder="%s:%s_VALUE"',
-                    $inlinePlaceHolder,
-                    strtoupper($inlinePlaceHolder)
-                );
-            }
-        }
-
-        if ($missingInlinePlaceHolders) {
-            $io->error(
-                sprintf(
-                    $this->trans('commands.chain.messages.missing-inline-placeholders'),
-                    implode(', ', array_keys($missingInlinePlaceHolders))
-                )
-            );
-
-            $io->info($this->trans('commands.chain.messages.set-inline-placeholders'));
-            $io->block(array_values($missingInlinePlaceHolders));
-
-            return 1;
-        }
-
-        $inlinePlaceHolderData = new ArrayDataSource($inlinePlaceHolderMap);
-        $placeholderResolver = new RegexPlaceholderResolver($inlinePlaceHolderData, '%{{', '}}');
-        $chainContent = $placeholderResolver->resolvePlaceholder($chainContent);
 
         $parser = new Parser();
-        $configData = $parser->parse($chainContent);
+        $chainData = $parser->parse($chainContent);
 
         $commands = [];
-        if (array_key_exists('commands', $configData)) {
-            $commands = $configData['commands'];
+        if (array_key_exists('commands', $chainData)) {
+            $commands = $chainData['commands'];
         }
 
-        $parameterOptions = $input->getOptions();
-        unset($parameterOptions['file']);
+        $chainInlineOptions = $input->getOptions();
+        unset($chainInlineOptions['file']);
 
         foreach ($commands as $command) {
             $moduleInputs = [];
@@ -310,11 +241,13 @@ class ChainCommand extends Command
                 $moduleInputs['--'.$key] = is_null($value) ? '' : $value;
             }
 
+            // Get application global options
             foreach ($this->getApplication()->getDefinition()->getOptions() as $option) {
                 $optionName = $option->getName();
-                if (array_key_exists($optionName, $parameterOptions)) {
-                    $optionValue = $parameterOptions[$optionName];
-                    if ($optionValue) {
+                if (array_key_exists($optionName, $chainInlineOptions)) {
+                    $optionValue = $chainInlineOptions[$optionName];
+                    // Set global option only if is not available in command options
+                    if (!isset($moduleInputs['--' . $optionName]) && $optionValue) {
                         $moduleInputs['--' . $optionName] = $optionValue;
                     }
                 }
@@ -327,8 +260,8 @@ class ChainCommand extends Command
                 continue;
             }
 
-            $io->text($command['command']);
-            $io->newLine();
+            $this->getIo()->text($command['command']);
+            $this->getIo()->newLine();
 
             $input = new ArrayInput($moduleInputs);
             if (!is_null($interactive)) {
@@ -337,61 +270,15 @@ class ChainCommand extends Command
 
             $allowFailure = array_key_exists('allow_failure', $command)?$command['allow_failure']:false;
             try {
-                $callCommand->run($input, $io);
+                $callCommand->run($input, $this->getIo());
             } catch (\Exception $e) {
                 if (!$allowFailure) {
-                    $io->error($e->getMessage());
+                    $this->getIo()->error($e->getMessage());
                     return 1;
                 }
             }
         }
 
         return 0;
-    }
-
-    /**
-     * Helper to load and clean up the chain file.
-     *
-     * @param string $file The file name
-     *
-     * @return string $contents The contents of the file
-     */
-    private function getFileContents($file)
-    {
-        $contents = file_get_contents($file);
-
-        // Remove lines with comments.
-        $contents = preg_replace('![ \t]*#.*[ \t]*[\r|\r\n|\n]!', PHP_EOL, $contents);
-        //  Strip blank lines
-        $contents = preg_replace("/(^[\r\n]*|[\r\n]+)[\t]*[\r\n]+/", PHP_EOL, $contents);
-
-        return $contents;
-    }
-
-    private function extractPlaceHolders($chainContent, $identifier)
-    {
-        $placeHolders = [];
-        $regex = '/\\'.$identifier.'{{(.*?)}}/';
-        preg_match_all(
-            $regex,
-            $chainContent,
-            $placeHolders
-        );
-
-        if (!$placeHolders) {
-            return [];
-        }
-
-        return array_unique($placeHolders[1]);
-    }
-
-    private function extractInlinePlaceHolders($chainContent)
-    {
-        return $this->extractPlaceHolders($chainContent, '%');
-    }
-
-    private function extractEnvironmentPlaceHolders($chainContent)
-    {
-        return $this->extractPlaceHolders($chainContent, '$');
     }
 }

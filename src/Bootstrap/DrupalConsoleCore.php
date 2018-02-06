@@ -7,12 +7,14 @@
 
 namespace Drupal\Console\Core\Bootstrap;
 
+use Drupal\Console\Core\Utils\DrupalFinder;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 
 /**
  * Class DrupalConsoleCore
+ *
  * @package Drupal\Console\Core\Bootstrap
  */
 class DrupalConsoleCore
@@ -28,14 +30,25 @@ class DrupalConsoleCore
     protected $appRoot;
 
     /**
-     * DrupalConsole constructor.
-     * @param $root
-     * @param $appRoot
+     * @var DrupalFinder
      */
-    public function __construct($root, $appRoot = null)
-    {
+    protected $drupalFinder;
+
+    /**
+     * DrupalConsole constructor.
+     *
+     * @param string       $root
+     * @param string       $appRoot
+     * @param DrupalFinder $drupalFinder
+     */
+    public function __construct(
+        $root,
+        $appRoot = null,
+        DrupalFinder $drupalFinder
+    ) {
         $this->root = $root;
         $this->appRoot = $appRoot;
+        $this->drupalFinder = $drupalFinder;
     }
 
     /**
@@ -78,6 +91,11 @@ class DrupalConsoleCore
         $container->set(
             'console.root',
             $consoleRoot
+        );
+
+        $container->set(
+            'console.drupal_finder',
+            $this->drupalFinder
         );
 
         $configurationManager = $container->get('console.configuration_manager');

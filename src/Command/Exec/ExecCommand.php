@@ -7,24 +7,21 @@
 
 namespace Drupal\Console\Core\Command\Exec;
 
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Process\ExecutableFinder;
-use Drupal\Console\Core\Command\Shared\CommandTrait;
 use Drupal\Console\Core\Utils\ShellProcess;
-use Drupal\Console\Core\Style\DrupalStyle;
+use Drupal\Console\Core\Command\Command;
 
 /**
  * Class ExecCommand
+ *
  * @package Drupal\Console\Core\Command\Exec
  */
 class ExecCommand extends Command
 {
-    use CommandTrait;
-
     /**
      * @var ShellProcess
      */
@@ -32,6 +29,7 @@ class ExecCommand extends Command
 
     /**
      * ExecCommand constructor.
+     *
      * @param ShellProcess $shellProcess
      */
     public function __construct(ShellProcess $shellProcess)
@@ -65,12 +63,11 @@ class ExecCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $io = new DrupalStyle($input, $output);
         $bin = $input->getArgument('bin');
         $workingDirectory = $input->getOption('working-directory');
 
         if (!$bin) {
-            $io->error(
+            $this->getIo()->error(
                 $this->trans('commands.exec.messages.missing-bin')
             );
 
@@ -84,7 +81,7 @@ class ExecCommand extends Command
 
         $finder = new ExecutableFinder();
         if (!$finder->find($name)) {
-            $io->error(
+            $this->getIo()->error(
                 sprintf(
                     $this->trans('commands.exec.messages.binary-not-found'),
                     $name
@@ -95,18 +92,18 @@ class ExecCommand extends Command
         }
 
         if (!$this->shellProcess->exec($bin, $workingDirectory)) {
-            $io->error(
+            $this->getIo()->error(
                 sprintf(
                     $this->trans('commands.exec.messages.invalid-bin')
                 )
             );
 
-            $io->writeln($this->shellProcess->getOutput());
+            $this->getIo()->writeln($this->shellProcess->getOutput());
 
             return 1;
         }
 
-        $io->success(
+        $this->getIo()->success(
             sprintf(
                 $this->trans('commands.exec.messages.success'),
                 $bin

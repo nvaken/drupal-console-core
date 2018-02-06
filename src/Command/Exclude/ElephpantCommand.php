@@ -9,20 +9,18 @@ namespace Drupal\Console\Core\Command\Exclude;
 
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Finder\Finder;
-use Drupal\Console\Core\Command\Shared\CommandTrait;
+use Drupal\Console\Core\Command\Command;
 use Drupal\Console\Core\Utils\TwigRenderer;
-use Drupal\Console\Core\Style\DrupalStyle;
+use Drupal\Console\Core\Utils\ConfigurationManager;
 
 /**
  * Class ElephpantCommand
+ *
  * @package Drupal\Console\Core\Command\Exclude
  */
 class ElephpantCommand extends Command
 {
-    use CommandTrait;
-
     /**
      * @var string
      */
@@ -34,16 +32,26 @@ class ElephpantCommand extends Command
     protected $renderer;
 
     /**
-     * DrupliconCommand constructor.
-     * @param string       $appRoot
-     * @param TwigRenderer $renderer
+     * @var ConfigurationManager
+     */
+    protected $configurationManager;
+
+
+    /**
+     * ElephpantCommand constructor.
+     *
+     * @param string               $appRoot
+     * @param TwigRenderer         $renderer
+     * @param ConfigurationManager $configurationManager
      */
     public function __construct(
         $appRoot,
-        TwigRenderer $renderer
+        TwigRenderer $renderer,
+        ConfigurationManager $configurationManager
     ) {
         $this->appRoot = $appRoot;
         $this->renderer = $renderer;
+        $this->configurationManager = $configurationManager;
         parent::__construct();
     }
 
@@ -62,11 +70,9 @@ class ElephpantCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
-        $io = new DrupalStyle($input, $output);
-
         $directory = sprintf(
             '%stemplates/core/elephpant/',
-            $this->appRoot . DRUPAL_CONSOLE_CORE
+            $this->configurationManager->getVendorCoreRoot()
         );
 
         $finder = new Finder();
@@ -87,7 +93,7 @@ class ElephpantCommand extends Command
             )
         );
 
-        $io->writeln($elephpant);
+        $this->getIo()->writeln($elephpant);
         return 0;
     }
 }
